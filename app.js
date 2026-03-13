@@ -146,19 +146,36 @@
             html = html.replace(/^\- (.+)$/gm, '<li>$1</li>');
             html = html.replace(/^\d+\. (.+)$/gm, '<li>$1</li>');
 
-            // Wrap consecutive li elements in ul/ol
-            html = html.replace(/(<li>.*<\/li>\n?)+/g, '<ul>$&</ul>');
+            // Wrap consecutive li elements in ul/ol - use multiline flag
+            html = html.replace(/((?:<li>.*<\/li>\n?)+)/g, (match) => {
+                if (match.trim().startsWith('<li>')) {
+                    return '<ul>' + match + '</ul>';
+                }
+                return match;
+            });
 
             // Horizontal rule
             html = html.replace(/^---$/gm, '<hr />');
 
-            // Paragraphs
+            // Paragraphs - only add <br> for actual line breaks within text blocks
             html = html.split('\n\n').map(block => {
                 block = block.trim();
                 if (!block) return '';
-                if (block.startsWith('<h') || block.startsWith('<pre') || block.startsWith('<ul') || block.startsWith('<blockquote') || block.startsWith('<div') || block.startsWith('<hr')) {
+                
+                // Skip if it's already a block element
+                if (block.startsWith('<h') || block.startsWith('<pre') || block.startsWith('<ul') || 
+                    block.startsWith('<ol') || block.startsWith('<blockquote') || block.startsWith('<div') || 
+                    block.startsWith('<hr') || block.startsWith('<p')) {
                     return block;
                 }
+                
+                // Only convert single newlines to <br> if the block has multiple lines of text
+                // Skip if it looks like it's already processed or is a list item
+                if (block.includes('<li>') || !block.includes('\n')) {
+                    return `<p>${block}</p>`;
+                }
+                
+                // Convert single newlines to <br> but preserve multiple spaces
                 return `<p>${block.replace(/\n/g, '<br>')}</p>`;
             }).join('\n');
 
