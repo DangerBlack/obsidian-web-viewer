@@ -300,31 +300,83 @@
             container.innerHTML = '<div class="loading"><div class="spinner"></div>Loading...</div>';
 
             try {
-                // Try to load the file - will search multiple locations if needed
-                const content = await loadFileWithSearch(path);
+                // Check if this is an image file
+                const imageExtensions = ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg', '.bmp'];
+                const lowerPath = path.toLowerCase();
+                const isImage = imageExtensions.some(ext => lowerPath.endsWith(ext));
+                
+                if (isImage) {
+                    // Load and display image directly
+                    await loadImageFile(path);
+                } else {
+                    // Load markdown file
+                    await loadMarkdownFile(path);
+                }
                 
                 // Track visited file
                 visitedFiles.add(path);
                 
-                // Extract links for navigation
-                const links = extractLinks(content, path);
-                links.forEach(link => visitedFiles.add(link));
-                
-                const html = parseMarkdown(content, baseUrl, path);
-
-                const fileName = path.split('/').pop().replace('.md', '');
-                container.innerHTML = `
-                    <div class="content-view">
-                        <h1>${fileName}</h1>
-                        ${html}
-                    </div>
-                `;
-
                 renderFileExplorer();
                 renderBreadcrumbs(path);
             } catch (e) {
                 container.innerHTML = `<div class="error">Failed to load file: ${e.message}</div>`;
             }
+        }
+
+        // Load markdown file
+        async function loadMarkdownFile(path) {
+            const encodedPath = path.split('/').map(encodeURIComponent).join('/');
+            const fullUrl = `${baseUrl}/${encodedPath}`;
+            const content = await fetchMarkdown(fullUrl, secretKey);
+            
+            // Extract links for navigation
+            const links = extractLinks(content, path);
+            links.forEach(link => visitedFiles.add(link));
+            
+            const html = parseMarkdown(content, baseUrl, path);
+
+            const fileName = path.split('/').pop().replace('.md', '');
+            const container = document.getElementById('contentContainer');
+            container.innerHTML = `
+                <div class="content-view">
+                    <h1>${fileName}</h1>
+                    ${html}
+                </div>
+            `;
+            
+            // Load lazy images after content is rendered
+            setTimeout(loadLazyImages, 100);
+        }
+
+        // Load image file
+        async function loadImageFile(path) {
+            const encodedPath = path.split('/').map(encodeURIComponent).join('/');
+            const fullUrl = `${baseUrl}/${encodedPath}`;
+            
+            const response = await fetch(fullUrl, {
+                method: 'GET',
+                headers: {
+                    'x-secret-key': secretKey
+                }
+            });
+            
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+            
+            const blob = await response.blob();
+            const blobUrl = URL.createObjectURL(blob);
+            
+            const fileName = path.split('/').pop();
+            const container = document.getElementById('contentContainer');
+            container.innerHTML = `
+                <div class="content-view">
+                    <h1>${fileName}</h1>
+                    <div class="image-container">
+                        <img src="${blobUrl}" alt="${fileName}" class="image-preview" style="max-width: 100%; height: auto;" />
+                    </div>
+                </div>
+            `;
         }
 
         // Try to load file from multiple possible locations
