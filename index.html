@@ -1,0 +1,623 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Obsidian Viewer</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background: #1e1e1e;
+            color: #d4d4d4;
+            line-height: 1.6;
+            min-height: 100vh;
+        }
+
+        .container {
+            display: flex;
+            min-height: 100vh;
+        }
+
+        /* Sidebar */
+        .sidebar {
+            width: 280px;
+            background: #252526;
+            border-right: 1px solid #3c3c3c;
+            overflow-y: auto;
+            position: fixed;
+            height: 100vh;
+            padding: 20px 0;
+        }
+
+        .sidebar-header {
+            padding: 0 20px 20px;
+            border-bottom: 1px solid #3c3c3c;
+            margin-bottom: 15px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .sidebar-header h2 {
+            font-size: 14px;
+            text-transform: uppercase;
+            color: #858585;
+            letter-spacing: 0.5px;
+            margin: 0;
+        }
+
+        .btn-open {
+            background: #3794ff;
+            color: white;
+            border: none;
+            padding: 4px 10px;
+            border-radius: 4px;
+            font-size: 12px;
+            cursor: pointer;
+        }
+
+        .btn-open:hover {
+            background: #2a7fd4;
+        }
+
+        .file-list {
+            list-style: none;
+        }
+
+        .file-item {
+            padding: 8px 20px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            transition: background 0.15s;
+        }
+
+        .file-item:hover {
+            background: #2a2d2e;
+        }
+
+        .file-item.active {
+            background: #37373d;
+        }
+
+        .file-item .icon {
+            font-size: 14px;
+        }
+
+        .file-item .name {
+            flex: 1;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            font-size: 13px;
+        }
+
+        /* Main content */
+        .main {
+            flex: 1;
+            margin-left: 280px;
+            padding: 30px;
+            max-width: 900px;
+        }
+
+        /* Content view */
+        .content-view {
+            background: #1e1e1e;
+            border-radius: 8px;
+            padding: 30px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+        }
+
+        .content-view h1 {
+            color: #d4d4d4;
+            font-size: 28px;
+            margin-bottom: 20px;
+            padding-bottom: 15px;
+            border-bottom: 1px solid #3c3c3c;
+        }
+
+        .content-view h2 {
+            color: #d4d4d4;
+            font-size: 22px;
+            margin: 25px 0 15px;
+        }
+
+        .content-view h3 {
+            color: #d4d4d4;
+            font-size: 18px;
+            margin: 20px 0 12px;
+        }
+
+        .content-view p {
+            margin-bottom: 15px;
+            color: #d4d4d4;
+        }
+
+        .content-view code {
+            background: #2d2d2d;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 13px;
+            color: #9cdcfe;
+        }
+
+        .content-view pre {
+            background: #2d2d2d;
+            padding: 15px;
+            border-radius: 6px;
+            overflow-x: auto;
+            margin: 15px 0;
+        }
+
+        .content-view pre code {
+            background: none;
+            padding: 0;
+            color: #d4d4d4;
+        }
+
+        .content-view blockquote {
+            border-left: 4px solid #3c3c3c;
+            padding-left: 20px;
+            margin: 15px 0;
+            color: #858585;
+        }
+
+        .content-view ul, .content-view ol {
+            margin: 15px 0;
+            padding-left: 30px;
+        }
+
+        .content-view li {
+            margin-bottom: 8px;
+        }
+
+        .content-view a {
+            color: #3794ff;
+            text-decoration: none;
+        }
+
+        .content-view a:hover {
+            text-decoration: underline;
+        }
+
+        /* Table view */
+        .table-view {
+            display: none;
+            background: #252526;
+            border-radius: 8px;
+            overflow: hidden;
+            margin-top: 20px;
+        }
+
+        .table-view.active {
+            display: block;
+        }
+
+        .table-header {
+            display: grid;
+            grid-template-columns: 2fr 1fr 1fr;
+            gap: 15px;
+            padding: 12px 20px;
+            background: #2d2d2d;
+            font-weight: 600;
+            font-size: 13px;
+            color: #858585;
+            text-transform: uppercase;
+        }
+
+        .table-row {
+            display: grid;
+            grid-template-columns: 2fr 1fr 1fr;
+            gap: 15px;
+            padding: 12px 20px;
+            border-bottom: 1px solid #3c3c3c;
+            cursor: pointer;
+            transition: background 0.15s;
+            align-items: center;
+        }
+
+        .table-row:hover {
+            background: #2a2d2e;
+        }
+
+        .table-row .name {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .table-row .size, .table-row .date {
+            color: #858585;
+            font-size: 13px;
+        }
+
+        /* Image preview */
+        .image-preview {
+            max-width: 100%;
+            border-radius: 6px;
+            margin: 15px 0;
+            display: block;
+        }
+
+        .image-container {
+            margin: 15px 0;
+            text-align: center;
+        }
+
+        /* Navigation breadcrumbs */
+        .breadcrumbs {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 20px;
+            padding: 10px 15px;
+            background: #252526;
+            border-radius: 6px;
+        }
+
+        .breadcrumb-item {
+            color: #3794ff;
+            text-decoration: none;
+            font-size: 14px;
+        }
+
+        .breadcrumb-item:hover {
+            text-decoration: underline;
+        }
+
+        .breadcrumb-separator {
+            color: #858585;
+        }
+
+        .breadcrumb-current {
+            color: #d4d4d4;
+        }
+
+        /* Loading state */
+        .loading {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 60px;
+            color: #858585;
+        }
+
+        .spinner {
+            width: 40px;
+            height: 40px;
+            border: 3px solid #3c3c3c;
+            border-top-color: #3794ff;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-right: 15px;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        /* Error state */
+        .error {
+            background: #5a1e1e;
+            border: 1px solid #8b2a2a;
+            border-radius: 6px;
+            padding: 20px;
+            margin: 20px;
+            color: #f48771;
+        }
+
+        /* View toggle */
+        .view-toggle {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+
+        .view-btn {
+            background: #2d2d2d;
+            border: 1px solid #3c3c3c;
+            color: #d4d4d4;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 13px;
+            transition: all 0.15s;
+        }
+
+        .view-btn:hover {
+            background: #3c3c3c;
+        }
+
+        .view-btn.active {
+            background: #3794ff;
+            border-color: #3794ff;
+            color: white;
+        }
+
+        /* Empty state */
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: #858585;
+        }
+
+        .empty-state h3 {
+            margin-bottom: 10px;
+            color: #d4d4d4;
+        }
+
+        /* Callouts (Obsidian feature) */
+        .callout {
+            border-left: 4px solid;
+            padding: 15px 20px;
+            margin: 15px 0;
+            border-radius: 0 6px 6px 0;
+        }
+
+        .callout-info {
+            border-color: #3794ff;
+            background: rgba(55, 148, 255, 0.1);
+        }
+
+        .callout-note {
+            border-color: #9cdcfe;
+            background: rgba(156, 220, 254, 0.1);
+        }
+
+        .callout-warning {
+            border-color: #dcdcaa;
+            background: rgba(221, 220, 170, 0.1);
+        }
+
+        .callout-error {
+            border-color: #f48771;
+            background: rgba(244, 135, 113, 0.1);
+        }
+
+        .callout-title {
+            font-weight: 600;
+            margin-bottom: 8px;
+            font-size: 14px;
+        }
+
+        /* Internal link handling */
+        .internal-link {
+            color: #3794ff;
+            cursor: pointer;
+        }
+
+        .internal-link:hover {
+            text-decoration: underline;
+        }
+
+        /* Open Dialog */
+        .open-dialog {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.7);
+            z-index: 1000;
+        }
+
+        .open-dialog.hidden {
+            display: none;
+        }
+
+        .dialog-content {
+            background: #252526;
+            border-radius: 12px;
+            padding: 30px;
+            max-width: 500px;
+            width: 90%;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.5);
+        }
+
+        .dialog-content h1 {
+            color: #d4d4d4;
+            font-size: 24px;
+            margin-bottom: 8px;
+        }
+
+        .dialog-desc {
+            color: #858585;
+            margin-bottom: 25px;
+            font-size: 14px;
+        }
+
+        .form-group {
+            margin-bottom: 18px;
+        }
+
+        .form-group label {
+            display: block;
+            color: #d4d4d4;
+            font-size: 13px;
+            margin-bottom: 6px;
+            font-weight: 500;
+        }
+
+        .form-group input,
+        .form-group textarea {
+            width: 100%;
+            background: #1e1e1e;
+            border: 1px solid #3c3c3c;
+            border-radius: 6px;
+            padding: 10px 12px;
+            color: #d4d4d4;
+            font-size: 14px;
+            font-family: inherit;
+        }
+
+        .form-group input:focus,
+        .form-group textarea:focus {
+            outline: none;
+            border-color: #3794ff;
+        }
+
+        .form-group textarea {
+            resize: vertical;
+            min-height: 80px;
+        }
+
+        .dialog-actions {
+            display: flex;
+            gap: 10px;
+            margin-top: 25px;
+        }
+
+        .btn {
+            padding: 10px 20px;
+            border-radius: 6px;
+            border: none;
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+
+        .btn-primary {
+            background: #3794ff;
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: #2a7fd4;
+        }
+
+        .btn-secondary {
+            background: #3c3c3c;
+            color: #d4d4d4;
+        }
+
+        .btn-secondary:hover {
+            background: #4c4c4c;
+        }
+
+        .btn-copy {
+            background: #2d2d2d;
+            color: #3794ff;
+            border: 1px solid #3794ff;
+            padding: 8px 14px;
+        }
+
+        .btn-copy:hover {
+            background: #3794ff;
+            color: white;
+        }
+
+        .btn-open {
+            background: #3794ff;
+            color: white;
+            border: none;
+            padding: 4px 10px;
+            border-radius: 4px;
+            font-size: 12px;
+            cursor: pointer;
+            float: right;
+        }
+
+        .btn-open:hover {
+            background: #2a7fd4;
+        }
+
+        .generated-url {
+            margin-top: 25px;
+            padding-top: 20px;
+            border-top: 1px solid #3c3c3c;
+        }
+
+        .generated-url label {
+            display: block;
+            color: #858585;
+            font-size: 13px;
+            margin-bottom: 8px;
+        }
+
+        .url-box {
+            display: flex;
+            gap: 10px;
+        }
+
+        .url-box input {
+            flex: 1;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <aside class="sidebar" id="sidebar">
+            <div class="sidebar-header">
+                <h2>📁 Files</h2>
+                <button class="btn-open" onclick="openDialog()">Open</button>
+            </div>
+            <ul class="file-list" id="fileList"></ul>
+        </aside>
+
+        <main class="main">
+            <div class="breadcrumbs" id="breadcrumbs"></div>
+            
+            <div class="view-toggle">
+                <button class="view-btn active" data-view="content">📄 Content</button>
+                <button class="view-btn" data-view="table">📊 Table</button>
+            </div>
+
+            <div id="contentContainer"></div>
+        </main>
+    </div>
+
+    <!-- Open Dialog -->
+    <div id="openDialog" class="open-dialog hidden">
+        <div class="dialog-content">
+            <h1>📂 Open Obsidian Vault</h1>
+            <p class="dialog-desc">Enter your endpoint details to get started</p>
+            
+            <div class="form-group">
+                <label for="baseUrl">Base URL</label>
+                <input type="text" id="baseUrl" placeholder="https://storage.example.com/bucket/path" />
+            </div>
+            
+            <div class="form-group">
+                <label for="secretKey">Secret Key</label>
+                <input type="password" id="secretKey" placeholder="Your secret key" />
+            </div>
+            
+            <div class="form-group">
+                <label for="startFile">Starting File (optional)</label>
+                <input type="text" id="startFile" placeholder="path/to/file.md" />
+            </div>
+            
+            <div class="form-group">
+                <label for="presetFiles">File List (optional, one per line)</label>
+                <textarea id="presetFiles" placeholder="file1.md&#10;folder/file2.md&#10;notes.md"></textarea>
+            </div>
+            
+            <div class="dialog-actions">
+                <button class="btn btn-primary" onclick="generateUrl()">Generate URL</button>
+                <button class="btn btn-secondary" onclick="loadFromInput()">Load Directly</button>
+            </div>
+            
+            <div id="generatedUrl" class="generated-url" style="display: none;">
+                <label>Shareable URL:</label>
+                <div class="url-box">
+                    <input type="text" id="shareableUrl" readonly />
+                    <button class="btn btn-copy" onclick="copyUrl()">Copy</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
