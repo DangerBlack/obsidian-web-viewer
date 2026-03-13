@@ -51,6 +51,9 @@
         function parseMarkdown(md, baseUrl, currentFile) {
             let html = md;
 
+            // First: Process bare URLs (before any HTML generation)
+            html = html.replace(/\b(https?:\/\/[^\s<>"')\]]+)(?=[\s<>"')\]]|$)/g, '___URL:$1___');
+
             // Code blocks
             html = html.replace(/```(\w+)?\n([\s\S]*?)```/g, (match, lang, code) => {
                 return `<pre><code class="language-${lang || ''}">${escapeHtml(code.trim())}</code></pre>`;
@@ -104,6 +107,9 @@
 
             // External links [text](url)
             html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank">$1</a>');
+
+            // Restore and convert bare URLs to links
+            html = html.replace(/___URL:(https?:\/\/[^\s<>"')\]]+)___/g, '<a href="$1" target="_blank">$1</a>');
 
             // Headers
             html = html.replace(/^### (.+)$/gm, '<h3>$1</h3>');
