@@ -5,6 +5,7 @@
         let visitedFiles = new Set();
         let hasInitialized = false;
         let fileCache = {}; // Maps filename -> full path
+        let allKnownFiles = []; // All files from config + discovered
 
         // Parse URL fragment
         function parseFragment() {
@@ -186,24 +187,30 @@
             return link;
         }
 
-        // Render file explorer (visited files)
+        // Render file explorer (all known files)
         function renderFileExplorer() {
             const list = document.getElementById('fileList');
-            const files = Array.from(visitedFiles).sort();
             
-            // Group by base filename to avoid duplicates
+            // Combine all known files with visited files
+            const allFiles = new Set(allKnownFiles);
+            visitedFiles.forEach(f => allFiles.add(f));
+            
+            // Sort files
+            const sortedFiles = Array.from(allFiles).sort();
+            
+            // Group by base filename to avoid duplicates, keeping full path
             const uniqueFiles = {};
-            files.forEach(file => {
+            sortedFiles.forEach(file => {
                 const baseName = file.split('/').pop();
-                // Keep the full path version if available, otherwise the short one
+                // Keep the full path version if available
                 if (!uniqueFiles[baseName] || file.includes('/')) {
                     uniqueFiles[baseName] = file;
                 }
             });
             
-            const uniqueList = Object.values(uniqueFiles).sort();
+            const finalList = Object.values(uniqueFiles).sort();
             
-            list.innerHTML = uniqueList.map(file => `
+            list.innerHTML = finalList.map(file => `
                 <li class="file-item ${file === currentPath ? 'active' : ''}" onclick="loadFile('${file}')">
                     <span class="icon">📄</span>
                     <span class="name">${file.split('/').pop().replace('.md', '')}</span>
@@ -484,6 +491,9 @@
                     const baseName = name.replace(/\.md$/i, '');
                     fileCache[name] = f;
                     fileCache[baseName] = f;
+                    if (!allKnownFiles.includes(f)) {
+                        allKnownFiles.push(f);
+                    }
                 });
             }
 
@@ -540,6 +550,10 @@
                             // Cache both with and without extension
                             fileCache[name] = f;
                             fileCache[baseName] = f;
+                            // Add to all known files
+                            if (!allKnownFiles.includes(f)) {
+                                allKnownFiles.push(f);
+                            }
                         });
                     }
                 } catch (e) {}
@@ -561,12 +575,21 @@
                             fileCache = JSON.parse(cachedFiles);
                         }
                         
+                        // Load all known files
+                        const knownFiles = sessionStorage.getItem('allKnownFiles');
+                        if (knownFiles) {
+                            allKnownFiles = JSON.parse(knownFiles);
+                        }
+                        
                         if (config.files) {
                             config.files.forEach(f => {
                                 const name = f.split('/').pop();
                                 const baseName = name.replace(/\.md$/i, '');
                                 fileCache[name] = f;
                                 fileCache[baseName] = f;
+                                if (!allKnownFiles.includes(f)) {
+                                    allKnownFiles.push(f);
+                                }
                             });
                         }
                         
@@ -582,9 +605,10 @@
             return false;
         }
 
-        // Save file cache to sessionStorage
+        // Save file cache and known files to sessionStorage
         function saveFileCache() {
             sessionStorage.setItem('fileCache', JSON.stringify(fileCache));
+            sessionStorage.setItem('allKnownFiles', JSON.stringify(allKnownFiles));
         }
 
         // Initialize
