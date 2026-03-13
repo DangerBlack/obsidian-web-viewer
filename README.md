@@ -12,6 +12,11 @@ A static web page that allows you to view Obsidian-style markdown files from S3-
 - **Shareable links**: URL fragments encode configuration for easy sharing
 - **File list**: Browse all known files in the sidebar
 
+## Preview
+
+<img width="3734" height="1790" alt="image" src="https://github.com/user-attachments/assets/12d85962-3a1f-48cb-93f3-e29fce19c583" />
+
+
 ## Usage
 
 ### Opening a vault
