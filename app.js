@@ -517,6 +517,13 @@
             document.getElementById('openDialog').classList.remove('hidden');
         }
 
+        function toggleSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            const main = document.getElementById('main');
+            sidebar.classList.toggle('mobile-open');
+            main.classList.toggle('full-width');
+        }
+
         // Check for URL fragment on load
         let hasUrlFragment = false;
         function checkUrlFragment() {
