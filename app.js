@@ -59,17 +59,37 @@
             // Inline code
             html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
 
-            // Images ![alt](url)
+            // Images - handle all Obsidian formats
+            // 1. ![[filename]] or ![[filename|alt]] or ![[filename|dimensions]]
+            html = html.replace(/!\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g, (match, filename, altOrDims) => {
+                // Check if this looks like an image (common image extensions)
+                const imageExtensions = ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg', '.bmp'];
+                const lowerFilename = filename.toLowerCase();
+                const isImage = imageExtensions.some(ext => lowerFilename.endsWith(ext));
+                
+                if (isImage) {
+                    const imagePath = resolvePath(filename, currentFile);
+                    const encodedPath = imagePath.split('/').map(encodeURIComponent).join('/');
+                    const fullImageUrl = `${baseUrl}/${encodedPath}`;
+                    const alt = altOrDims || filename;
+                    // Use data attribute for the real URL, load via JavaScript
+                    return `<div class="image-container"><img src="about:blank" data-src="${fullImageUrl}" data-secret="${secretKey}" alt="${alt}" class="image-preview lazy-image" /></div>`;
+                }
+                // Not an image, leave as internal link (will be handled by internal link regex)
+                return match;
+            });
+
+            // 2. ![alt](url) - Standard markdown images
             html = html.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (match, alt, url) => {
                 if (url.startsWith('http')) {
                     return `<div class="image-container"><img src="${url}" alt="${alt}" class="image-preview" /></div>`;
                 } else {
                     // Relative image path
                     const imagePath = resolvePath(url, currentFile);
-                    // Encode each segment to preserve slashes
                     const encodedPath = imagePath.split('/').map(encodeURIComponent).join('/');
                     const fullImageUrl = `${baseUrl}/${encodedPath}`;
-                    return `<div class="image-container"><img src="${fullImageUrl}" alt="${alt}" class="image-preview" /></div>`;
+                    // Use data attribute for authenticated images
+                    return `<div class="image-container"><img src="about:blank" data-src="${fullImageUrl}" data-secret="${secretKey}" alt="${alt}" class="image-preview lazy-image" /></div>`;
                 }
             });
 
@@ -174,16 +194,44 @@
                 return link;
             }
             
-            const currentDir = currentFile.substring(0, currentFile.lastIndexOf('/'));
-            if (currentDir === '') {
-                return link;
+            // Handle absolute paths starting with /
+            if (link.startsWith('/')) {
+                return link.substring(1); // Remove leading slash
             }
             
-            // Handle relative paths
-            if (!link.startsWith('/')) {
+            // Check if the link is in our file cache (absolute path from vault root)
+            if (fileCache[link] || fileCache[link + '.md'] || fileCache[link + '.png'] || fileCache[link + '.jpg']) {
+                // Use the cached absolute path
+                const cachedPath = fileCache[link] || fileCache[link + '.md'] || fileCache[link + '.png'] || fileCache[link + '.jpg'];
+                return cachedPath;
+            }
+            
+            // Get the directory of the current file
+            const lastSlash = currentFile.lastIndexOf('/');
+            const currentDir = lastSlash > 0 ? currentFile.substring(0, lastSlash) : '';
+            
+            // Handle relative paths with ../
+            if (link.startsWith('../')) {
+                // Go up directories
+                const parts = currentDir.split('/');
+                const linkParts = link.split('/');
+                while (linkParts[0] === '..') {
+                    parts.pop();
+                    linkParts.shift();
+                }
+                const resolvedPath = parts.concat(linkParts).join('/');
+                return resolvedPath || linkParts.join('/');
+            }
+            
+            // Handle relative paths with ./
+            if (link.startsWith('./')) {
+                return currentDir ? `${currentDir}/${link.substring(2)}` : link.substring(2);
+            }
+            
+            // For simple filenames without path, try current directory first, then root
+            if (currentDir) {
                 return currentDir + '/' + link;
             }
-            
             return link;
         }
 
@@ -488,7 +536,8 @@
                 config.files = files;
                 files.forEach(f => {
                     const name = f.split('/').pop();
-                    const baseName = name.replace(/\.md$/i, '');
+                    const baseName = name.replace(/\.[^.]+$/, ''); // Remove last extension
+                    // Cache with full name, base name, and base name without any extension
                     fileCache[name] = f;
                     fileCache[baseName] = f;
                     if (!allKnownFiles.includes(f)) {
@@ -534,6 +583,47 @@
             main.classList.toggle('full-width');
         }
 
+        // Load lazy images with authentication header
+        function loadLazyImages() {
+            const lazyImages = document.querySelectorAll('img.lazy-image');
+            lazyImages.forEach(img => {
+                if (img.dataset.loaded) return;
+                
+                const url = img.dataset.src;
+                const secret = img.dataset.secret;
+                
+                if (!url || !secret) return;
+                
+                fetch(url, {
+                    method: 'GET',
+                    headers: {
+                        'x-secret-key': secret
+                    }
+                })
+                .then(response => {
+                    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                    return response.blob();
+                })
+                .then(blob => {
+                    const blobUrl = URL.createObjectURL(blob);
+                    img.src = blobUrl;
+                    img.dataset.loaded = 'true';
+                })
+                .catch(error => {
+                    console.error('Failed to load image:', url, error);
+                    img.style.display = 'none';
+                });
+            });
+        }
+
+        // Call loadLazyImages after content is rendered
+        const originalLoadFile = loadFile;
+        loadFile = async function(path) {
+            await originalLoadFile(path);
+            // Load images after a short delay to ensure DOM is ready
+            setTimeout(loadLazyImages, 100);
+        };
+
         // Check for URL fragment on load
         let hasUrlFragment = false;
         function checkUrlFragment() {
@@ -546,8 +636,8 @@
                     if (config.files) {
                         config.files.forEach(f => {
                             const name = f.split('/').pop();
-                            const baseName = name.replace(/\.md$/i, '');
-                            // Cache both with and without extension
+                            const baseName = name.replace(/\.[^.]+$/, ''); // Remove last extension
+                            // Cache both with full name and base name
                             fileCache[name] = f;
                             fileCache[baseName] = f;
                             // Add to all known files
@@ -584,7 +674,7 @@
                         if (config.files) {
                             config.files.forEach(f => {
                                 const name = f.split('/').pop();
-                                const baseName = name.replace(/\.md$/i, '');
+                                const baseName = name.replace(/\.[^.]+$/, ''); // Remove last extension
                                 fileCache[name] = f;
                                 fileCache[baseName] = f;
                                 if (!allKnownFiles.includes(f)) {
