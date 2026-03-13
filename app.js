@@ -325,9 +325,8 @@
 
         // Load markdown file
         async function loadMarkdownFile(path) {
-            const encodedPath = path.split('/').map(encodeURIComponent).join('/');
-            const fullUrl = `${baseUrl}/${encodedPath}`;
-            const content = await fetchMarkdown(fullUrl, secretKey);
+            // Use search to find the file
+            const content = await loadFileWithSearch(path);
             
             // Extract links for navigation
             const links = extractLinks(content, path);
