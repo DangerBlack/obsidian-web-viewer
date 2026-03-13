@@ -96,8 +96,10 @@
             // Internal links [[file]] or [[file|display]]
             html = html.replace(/\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g, (match, file, display) => {
                 const displayName = display || file;
+                // Escape single quotes for JavaScript
+                const escapedFile = file.replace(/'/g, "\\'");
                 // Don't resolve path here - let loadFile handle the search
-                return `<span class="internal-link" onclick="loadFile('${file}')">${displayName}</span>`;
+                return `<span class="internal-link" onclick="loadFile('${escapedFile}')">${displayName}</span>`;
             });
 
             // External links [text](url)
@@ -258,12 +260,13 @@
             
             const finalList = Object.values(uniqueFiles).sort();
             
-            list.innerHTML = finalList.map(file => `
-                <li class="file-item ${file === currentPath ? 'active' : ''}" onclick="loadFile('${file}')">
+            list.innerHTML = finalList.map(file => {
+                const escapedFile = file.replace(/'/g, "\\'");
+                return `<li class="file-item ${file === currentPath ? 'active' : ''}" onclick="loadFile('${escapedFile}')">
                     <span class="icon">📄</span>
                     <span class="name">${file.split('/').pop().replace('.md', '')}</span>
-                </li>
-            `).join('');
+                </li>`;
+            }).join('');
         }
 
         // Render breadcrumbs
@@ -275,15 +278,14 @@
             parts.forEach((part, i) => {
                 current += '/' + part;
                 const isLast = i === parts.length - 1;
-                
+                const escapedCurrent = current.replace(/'/g, "\\'");
                 if (isLast) {
                     crumbs.push(`<span class="breadcrumb-current">${part.replace('.md', '')}</span>`);
                 } else {
-                    crumbs.push(`<a class="breadcrumb-item" onclick="loadFile('${current}')">${part}</a>`);
+                    crumbs.push(`<a class="breadcrumb-item" onclick="loadFile('${escapedCurrent}')">${part}</a>`);
                 }
-
                 if (!isLast) {
-                    crumbs.push('<span class="breadcrumb-separator">/</span>');
+                    crumbs.push('/');
                 }
             });
 
@@ -438,12 +440,13 @@
                         <div>File</div>
                         <div>Path</div>
                     </div>
-                    ${files.map(file => `
-                        <div class="table-row" onclick="loadFile('${file}')">
+                    ${files.map(file => {
+                        const escapedFile = file.replace(/'/g, "\\'");
+                        return `<div class="table-row" onclick="loadFile('${escapedFile}')">
                             <div class="name">${file.split('/').pop().replace('.md', '')}</div>
                             <div class="name" style="color: #858585;">${file}</div>
-                        </div>
-                    `).join('')}
+                        </div>`;
+                    }).join('')}
                 </div>
             `;
         }
