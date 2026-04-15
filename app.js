@@ -213,51 +213,93 @@
             return links;
         }
 
-        // Resolve relative path
+        function extractImages(markdown, currentFile) {
+            const images = [];
+            
+            const obsidianImgRegex = /!\[\[([^\]]+)\]\]/g;
+            let match;
+            while ((match = obsidianImgRegex.exec(markdown)) !== null) {
+                const imgFile = match[1].split('|')[0];
+                const resolvedPath = resolvePath(imgFile, currentFile);
+                if (!images.includes(resolvedPath)) {
+                    images.push(resolvedPath);
+                }
+            }
+            
+            const standardImgRegex = /!\[([^\]]*)\]\(([^)]+)\)/g;
+            while ((match = standardImgRegex.exec(markdown)) !== null) {
+                const url = match[2];
+                if (!url.startsWith('http://') && !url.startsWith('https://')) {
+                    const resolvedPath = resolvePath(url, currentFile);
+                    if (!images.includes(resolvedPath)) {
+                        images.push(resolvedPath);
+                    }
+                }
+            }
+            
+            return images;
+        }
+
         function resolvePath(link, currentFile) {
             if (link.startsWith('http://') || link.startsWith('https://')) {
                 return link;
             }
             
-            // Handle absolute paths starting with /
-            if (link.startsWith('/')) {
-                return link.substring(1); // Remove leading slash
+            const cleanLink = link.split('|')[0];
+            const extensions = ['.md', '.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg'];
+            
+            if (cleanLink.startsWith('/')) {
+                const absolutePath = cleanLink.substring(1);
+                if (fileCache[absolutePath]) return fileCache[absolutePath];
+                for (const ext of extensions) {
+                    if (fileCache[absolutePath + ext]) return fileCache[absolutePath + ext];
+                }
+                return absolutePath;
             }
             
-            // Check if the link is in our file cache (absolute path from vault root)
-            if (fileCache[link] || fileCache[link + '.md'] || fileCache[link + '.png'] || fileCache[link + '.jpg']) {
-                // Use the cached absolute path
-                const cachedPath = fileCache[link] || fileCache[link + '.md'] || fileCache[link + '.png'] || fileCache[link + '.jpg'];
-                return cachedPath;
+            if (cleanLink.startsWith('./')) {
+                const lastSlash = currentFile.lastIndexOf('/');
+                const currentDir = lastSlash > 0 ? currentFile.substring(0, lastSlash) : '';
+                const relativePath = currentDir ? `${currentDir}/${cleanLink.substring(2)}` : cleanLink.substring(2);
+                if (fileCache[relativePath]) return fileCache[relativePath];
+                for (const ext of extensions) {
+                    if (fileCache[relativePath + ext]) return fileCache[relativePath + ext];
+                }
+                return relativePath;
             }
             
-            // Get the directory of the current file
-            const lastSlash = currentFile.lastIndexOf('/');
-            const currentDir = lastSlash > 0 ? currentFile.substring(0, lastSlash) : '';
-            
-            // Handle relative paths with ../
-            if (link.startsWith('../')) {
-                // Go up directories
+            if (cleanLink.startsWith('../')) {
+                const lastSlash = currentFile.lastIndexOf('/');
+                const currentDir = lastSlash > 0 ? currentFile.substring(0, lastSlash) : '';
                 const parts = currentDir.split('/');
-                const linkParts = link.split('/');
-                while (linkParts[0] === '..') {
+                const linkParts = cleanLink.split('/');
+                while (linkParts[0] === '..' && parts.length > 0) {
                     parts.pop();
                     linkParts.shift();
                 }
                 const resolvedPath = parts.concat(linkParts).join('/');
-                return resolvedPath || linkParts.join('/');
+                if (fileCache[resolvedPath]) return fileCache[resolvedPath];
+                for (const ext of extensions) {
+                    if (fileCache[resolvedPath + ext]) return fileCache[resolvedPath + ext];
+                }
+                return resolvedPath;
             }
             
-            // Handle relative paths with ./
-            if (link.startsWith('./')) {
-                return currentDir ? `${currentDir}/${link.substring(2)}` : link.substring(2);
+            if (fileCache[cleanLink]) return fileCache[cleanLink];
+            
+            const linkName = cleanLink.split('/').pop();
+            const linkBaseName = linkName.replace(/\.[^.]+$/, '');
+            
+            for (const ext of extensions) {
+                if (fileCache[cleanLink + ext]) return fileCache[cleanLink + ext];
+                if (fileCache[linkName + ext]) return fileCache[linkName + ext];
+                if (fileCache[linkBaseName + ext]) return fileCache[linkBaseName + ext];
             }
             
-            // For simple filenames without path, try current directory first, then root
-            if (currentDir) {
-                return currentDir + '/' + link;
-            }
-            return link;
+            if (fileCache[linkName]) return fileCache[linkName];
+            if (fileCache[linkBaseName]) return fileCache[linkBaseName];
+            
+            return cleanLink;
         }
 
         // Render file explorer (all known files)
@@ -346,14 +388,75 @@
             }
         }
 
+        async function discoverReferencedFiles(content, currentFile) {
+            const links = extractLinks(content, currentFile);
+            const images = extractImages(content, currentFile);
+            const allRefs = [...links, ...images];
+            
+            for (const ref of allRefs) {
+                const cleanRef = ref.split('|')[0];
+                const name = cleanRef.split('/').pop();
+                const baseName = name.replace(/\.[^.]+$/, '');
+                
+                const possibleExtensions = ['', '.md', '.png', '.jpg', '.jpeg', '.gif', '.webp'];
+                const possiblePaths = [];
+                
+                if (cleanRef.includes('/')) {
+                    possiblePaths.push(cleanRef);
+                }
+                
+                Object.values(fileCache).forEach(cachedPath => {
+                    const dir = cachedPath.substring(0, cachedPath.lastIndexOf('/'));
+                    if (dir) {
+                        possiblePaths.push(`${dir}/${name}`);
+                        possiblePaths.push(`${dir}/${baseName}.md`);
+                    }
+                });
+                
+                possibleExtensions.forEach(ext => {
+                    possiblePaths.push(name + ext);
+                    possiblePaths.push(baseName + ext);
+                });
+                
+                if (currentFile && currentFile.includes('/')) {
+                    const currentDir = currentFile.substring(0, currentFile.lastIndexOf('/'));
+                    possiblePaths.push(`${currentDir}/${name}`);
+                    possiblePaths.push(`${currentDir}/${baseName}.md`);
+                }
+                
+                for (const testPath of [...new Set(possiblePaths)]) {
+                    if (fileCache[testPath]) continue;
+                    
+                    try {
+                        const testContent = await fetchFileAtUrl(testPath);
+                        if (testContent) {
+                            fileCache[testPath] = testPath;
+                            fileCache[name] = testPath;
+                            fileCache[baseName] = testPath;
+                            if (!allKnownFiles.includes(testPath)) {
+                                allKnownFiles.push(testPath);
+                            }
+                            visitedFiles.add(testPath);
+                            
+                            if (testPath.endsWith('.md')) {
+                                await discoverReferencedFiles(testContent, testPath);
+                            }
+                            break;
+                        }
+                    } catch (e) {
+                    }
+                }
+            }
+            
+            saveFileCache();
+        }
+
         // Load markdown file
         async function loadMarkdownFile(path) {
             // Use search to find the file
             const content = await loadFileWithSearch(path);
             
-            // Extract links for navigation
-            const links = extractLinks(content, path);
-            links.forEach(link => visitedFiles.add(link));
+            await discoverReferencedFiles(content, path);
             
             const html = parseMarkdown(content, baseUrl, path);
 
@@ -401,26 +504,22 @@
             `;
         }
 
-        // Try to load file from multiple possible locations
         async function loadFileWithSearch(filename) {
-            const baseName = filename.split('/').pop();
+            const cleanName = filename.split('|')[0];
+            const baseName = cleanName.split('/').pop();
+            const baseNameWithoutExt = baseName.replace(/\.[^.]+$/, '');
             
-            // 1. Check cache first
+            if (fileCache[cleanName]) {
+                return await fetchFileAtUrl(fileCache[cleanName]);
+            }
             if (fileCache[baseName]) {
-                console.log(`Found in cache: ${baseName} -> ${fileCache[baseName]}`);
                 return await fetchFileAtUrl(fileCache[baseName]);
             }
-            
-            // 2. Build search paths
-            const searchPaths = [];
-            
-            // If filename has path, try it as-is first
-            if (filename.includes('/')) {
-                searchPaths.push(filename);
+            if (fileCache[baseNameWithoutExt]) {
+                return await fetchFileAtUrl(fileCache[baseNameWithoutExt]);
             }
             
-            // Try all known directories from file cache
-            const knownDirs = new Set();
+            const knownDirs = new Set(['']);
             Object.values(fileCache).forEach(path => {
                 const lastSlash = path.lastIndexOf('/');
                 if (lastSlash > 0) {
@@ -428,62 +527,44 @@
                 }
             });
             
-            // Add all known directories to search
+            const extensions = ['', '.md', '.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg'];
+            const searchPaths = new Set();
+            
+            if (cleanName.includes('/')) {
+                extensions.forEach(ext => {
+                    searchPaths.add(cleanName + ext);
+                });
+            }
+            
             knownDirs.forEach(dir => {
-                searchPaths.push(`${dir}/${baseName}`);
+                extensions.forEach(ext => {
+                    if (dir) {
+                        searchPaths.add(`${dir}/${baseName}${ext}`);
+                        searchPaths.add(`${dir}/${baseNameWithoutExt}${ext}`);
+                    } else {
+                        searchPaths.add(`${baseName}${ext}`);
+                        searchPaths.add(`${baseNameWithoutExt}${ext}`);
+                    }
+                });
             });
             
-            // Try current file's directory
             if (currentPath && currentPath.includes('/')) {
                 const currentDir = currentPath.substring(0, currentPath.lastIndexOf('/'));
-                if (!knownDirs.has(currentDir)) {
-                    searchPaths.push(`${currentDir}/${baseName}`);
-                }
-            }
-            
-            // Try root
-            searchPaths.push(baseName);
-            
-            // 3. Try with .md extension if not present
-            if (!filename.endsWith('.md') && !filename.endsWith('.base')) {
-                const mdName = baseName + '.md';
-                // Add .md versions of known dirs paths first
-                const newSearchPaths = [];
-                knownDirs.forEach(dir => {
-                    newSearchPaths.unshift(`${dir}/${mdName}`);
+                extensions.forEach(ext => {
+                    searchPaths.add(`${currentDir}/${baseName}${ext}`);
+                    searchPaths.add(`${currentDir}/${baseNameWithoutExt}${ext}`);
                 });
-                if (currentPath && currentPath.includes('/')) {
-                    const currentDir = currentPath.substring(0, currentPath.lastIndexOf('/'));
-                    newSearchPaths.unshift(`${currentDir}/${mdName}`);
-                }
-                newSearchPaths.unshift(mdName);
-                
-                // Try these first
-                for (const path of newSearchPaths) {
-                    try {
-                        const content = await fetchFileAtUrl(path);
-                        fileCache[baseName] = path;
-                        fileCache[mdName] = path;
-                        saveFileCache();
-                        console.log(`Cached: ${baseName} -> ${path}`);
-                        return content;
-                    } catch (e) {
-                        console.log(`Not found: ${path}`);
-                    }
-                }
             }
             
-            // 4. Try all other search paths
             for (const path of searchPaths) {
                 try {
                     const content = await fetchFileAtUrl(path);
+                    fileCache[cleanName] = path;
                     fileCache[baseName] = path;
-                    fileCache[mdName] = path;
+                    fileCache[baseNameWithoutExt] = path;
                     saveFileCache();
-                    console.log(`Cached: ${baseName} -> ${path}`);
                     return content;
                 } catch (e) {
-                    console.log(`Not found: ${path}`);
                 }
             }
             
@@ -614,7 +695,8 @@
                 files.forEach(f => {
                     const name = f.split('/').pop();
                     const baseName = name.replace(/\.[^.]+$/, ''); // Remove last extension
-                    // Cache with full name, base name, and base name without any extension
+                    // Cache with full path, full name, and base name
+                    fileCache[f] = f;
                     fileCache[name] = f;
                     fileCache[baseName] = f;
                     if (!allKnownFiles.includes(f)) {
@@ -714,7 +796,8 @@
                         config.files.forEach(f => {
                             const name = f.split('/').pop();
                             const baseName = name.replace(/\.[^.]+$/, ''); // Remove last extension
-                            // Cache both with full name and base name
+                            // Cache with full path, full name, and base name
+                            fileCache[f] = f;
                             fileCache[name] = f;
                             fileCache[baseName] = f;
                             // Add to all known files
