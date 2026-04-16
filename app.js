@@ -7,8 +7,10 @@
         let fileCache = {}; // Maps filename -> full path
         let aliasCache = {}; // Maps alias -> full path
         let allKnownFiles = []; // All files from config + discovered
-        let fetchCache = new Map(); // Cache fetch results to avoid duplicate requests
-        let pathResolutionCache = {}; // Cache successful path resolutions
+        let fetchCache = new Map();
+        let pathResolutionCache = {};
+        let tagSearchResults = [];
+        let isTagFilterActive = false;
 
         // Parse URL fragment
         function parseFragment() {
@@ -178,6 +180,10 @@
                 </div>`;
             });
 
+            html = html.replace(/#([a-zA-Z0-9/_-]+)/g, (match, tag) => {
+                return `<span class="tag" onclick="filterByTag('${tag}')">#${tag}</span>`;
+            });
+
             // Bold and italic
             html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
             html = html.replace(/\*([^*]+)\*/g, '<em>$1</em>');
@@ -317,6 +323,62 @@
             }
             
             return images;
+        }
+
+        async function filterByTag(tag) {
+            const container = document.getElementById('contentContainer');
+            container.innerHTML = '<div class="loading"><div class="spinner"></div>Searching for #' + tag + '...</div>';
+            
+            const matchingFiles = [];
+            const searchPattern = new RegExp(`#${tag}(?![a-zA-Z0-9/_-])`, 'g');
+            
+            for (const file of allKnownFiles) {
+                try {
+                    const content = await fetchFileAtUrl(file);
+                    if (searchPattern.test(content)) {
+                        matchingFiles.push(file);
+                    }
+                } catch (e) {
+                }
+            }
+            
+            tagSearchResults = matchingFiles;
+            isTagFilterActive = true;
+            
+            container.innerHTML = `
+                <div class="table-view active">
+                    <div class="table-header">
+                        <div>Files with #${tag}</div>
+                        <div>${matchingFiles.length} result${matchingFiles.length !== 1 ? 's' : ''}</div>
+                    </div>
+                    ${matchingFiles.length === 0 
+                        ? '<div class="empty-state"><h3>No files found</h3><p>No files contain this tag.</p></div>'
+                        : matchingFiles.map(file => {
+                            const escapedFile = file.replace(/'/g, "\\'");
+                            const fileName = file.split('/').pop().replace('.md', '');
+                            return `<div class="table-row" onclick="loadFile('${escapedFile}'); isTagFilterActive = false;">
+                                <div class="name">${fileName}</div>
+                                <div class="name" style="color: #858585;">${file}</div>
+                            </div>`;
+                        }).join('')
+                    }
+                    <div style="padding: 20px; text-align: center;">
+                        <button onclick="clearTagFilter()" style="background: #37373d; color: #fff; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer;">Clear Filter</button>
+                    </div>
+                </div>
+            `;
+            
+            renderFileExplorer();
+        }
+
+        function clearTagFilter() {
+            isTagFilterActive = false;
+            tagSearchResults = [];
+            if (currentPath) {
+                loadFile(currentPath);
+            } else {
+                document.getElementById('contentContainer').innerHTML = '<div class="empty-state"><h3>Welcome</h3><p>Select a file from the sidebar or use the table view.</p></div>';
+            }
         }
 
         function resolvePath(link, currentFile) {
