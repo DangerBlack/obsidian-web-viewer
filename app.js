@@ -11,6 +11,7 @@
         let pathResolutionCache = {};
         let tagSearchResults = [];
         let isTagFilterActive = false;
+        let backlinkIndex = {}; // Maps file path -> array of files that link to it
 
         // Parse URL fragment
         function parseFragment() {
@@ -325,6 +326,38 @@
             return images;
         }
 
+        // Build backlink index - maps each file to files that link to it
+        async function buildBacklinkIndex() {
+            const index = {};
+            
+            // Initialize index for all known files
+            allKnownFiles.forEach(file => {
+                index[file] = [];
+            });
+            
+            // Scan each file for outgoing links
+            for (const file of allKnownFiles) {
+                try {
+                    const content = await fetchFileAtUrl(file);
+                    const links = extractLinks(content, file);
+                    
+                    // For each link found, add this file as a backlink
+                    links.forEach(link => {
+                        // Normalize the link path
+                        const cleanLink = link.split('#')[0];
+                        if (index[cleanLink]) {
+                            index[cleanLink].push(file);
+                        }
+                    });
+                } catch (e) {
+                    console.warn(`Failed to scan ${file} for backlinks:`, e.message);
+                }
+            }
+            
+            backlinkIndex = index;
+            return index;
+        }
+
         async function filterByTag(tag) {
             const container = document.getElementById('contentContainer');
             container.innerHTML = '<div class="loading"><div class="spinner"></div>Searching for #' + tag + '...</div>';
@@ -379,6 +412,32 @@
             } else {
                 document.getElementById('contentContainer').innerHTML = '<div class="empty-state"><h3>Welcome</h3><p>Select a file from the sidebar or use the table view.</p></div>';
             }
+        }
+
+        function renderBacklinks(currentFile) {
+            const section = document.getElementById('backlinksSection');
+            const list = document.getElementById('backlinksList');
+            
+            const normalizedPath = currentFile.split('#')[0];
+            const backlinks = backlinkIndex[normalizedPath] || [];
+            
+            if (backlinks.length === 0) {
+                section.style.display = 'none';
+                return;
+            }
+            
+            section.style.display = 'block';
+            
+            const uniqueBacklinks = [...new Set(backlinks)];
+            
+            list.innerHTML = uniqueBacklinks.map(file => {
+                const escapedFile = file.replace(/'/g, "\\'");
+                const fileName = file.split('/').pop().replace('.md', '');
+                return `<li class="backlink-item" onclick="loadFile('${escapedFile}')">
+                    <span class="icon">📄</span>
+                    <span class="name">${fileName}</span>
+                </li>`;
+            }).join('');
         }
 
         function resolvePath(link, currentFile) {
@@ -702,6 +761,9 @@
             
             await discoverReferencedFiles(content, path);
             
+            // Build backlink index after discovering files
+            await buildBacklinkIndex();
+            
             const html = parseMarkdown(content, baseUrl, path);
 
             const fileName = path.split('/').pop().replace('.md', '');
@@ -712,6 +774,9 @@
                     ${html}
                 </div>
             `;
+            
+            // Render backlinks for current file
+            renderBacklinks(path);
             
             // Load lazy images after content is rendered
             setTimeout(loadLazyImages, 100);

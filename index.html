@@ -123,6 +123,45 @@
             font-size: 13px;
         }
 
+        /* Backlinks section */
+        .backlinks-section {
+            margin-top: 20px;
+            border-top: 1px solid #3c3c3c;
+            padding-top: 15px;
+        }
+
+        .backlinks-list {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+        }
+
+        .backlink-item {
+            padding: 8px 20px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            transition: background 0.15s;
+        }
+
+        .backlink-item:hover {
+            background: #2a2d2e;
+        }
+
+        .backlink-item .icon {
+            font-size: 14px;
+        }
+
+        .backlink-item .name {
+            flex: 1;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            font-size: 13px;
+            color: #a0a0a0;
+        }
+
         /* Main content */
         .main {
             flex: 1;
@@ -758,6 +797,13 @@
                 <button class="btn-open" onclick="openDialog()">Open</button>
             </div>
             <ul class="file-list" id="fileList"></ul>
+            
+            <div class="backlinks-section" id="backlinksSection" style="display: none;">
+                <div class="sidebar-header" style="margin-top: 20px; border-top: 1px solid #3c3c3c; padding-top: 15px;">
+                    <h2>🔗 Linked Mentions</h2>
+                </div>
+                <ul class="backlinks-list" id="backlinksList"></ul>
+            </div>
         </aside>
 
         <main class="main">
