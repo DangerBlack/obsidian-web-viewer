@@ -62,6 +62,26 @@
             // Inline code
             html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
 
+            // Tables (must be before other block elements)
+            html = html.replace(/^\|(.+)\|\n^\|([\s\-|]+)\|\n((?:^\|.+\|\n?)+)/gm, (match, header, separator, rows) => {
+                const headerCells = header.split('|')
+                    .filter((_, i, arr) => i > 0 && i < arr.length - 1)
+                    .map(h => `<th>${h.trim()}</th>`)
+                    .join('');
+                
+                const rowHtml = rows.trim().split('\n')
+                    .map(row => {
+                        const cells = row.split('|')
+                            .filter((_, i, arr) => i > 0 && i < arr.length - 1)
+                            .map(cell => `<td>${cell.trim()}</td>`)
+                            .join('');
+                        return `<tr>${cells}</tr>`;
+                    })
+                    .join('');
+                
+                return `<table><thead><tr>${headerCells}</tr></thead><tbody>${rowHtml}</tbody></table>`;
+            });
+
             // Images - handle all Obsidian formats
             // 1. ![[filename]] or ![[filename|alt]] or ![[filename|dimensions]]
             html = html.replace(/!\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g, (match, filename, altOrDims) => {
