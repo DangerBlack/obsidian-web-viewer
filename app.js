@@ -116,12 +116,12 @@
                 }
             });
 
-            // Internal links [[file]] or [[file|display]]
+            // Internal links [[file]] or [[file|display]] or [[file#heading]]
             html = html.replace(/\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g, (match, file, display) => {
                 const displayName = display || file;
                 // Escape single quotes for JavaScript
                 const escapedFile = file.replace(/'/g, "\\'");
-                // Don't resolve path here - let loadFile handle the search
+                // Pass the full link (including #heading) to loadFile
                 return `<span class="internal-link" onclick="loadFile('${escapedFile}')">${displayName}</span>`;
             });
 
@@ -131,10 +131,19 @@
             // Restore and convert bare URLs to links
             html = html.replace(/___URL:(https?:\/\/[^\s<>"')\]]+)___/g, '<a href="$1" target="_blank">$1</a>');
 
-            // Headers
-            html = html.replace(/^### (.+)$/gm, '<h3>$1</h3>');
-            html = html.replace(/^## (.+)$/gm, '<h2>$1</h2>');
-            html = html.replace(/^# (.+)$/gm, '<h1>$1</h1>');
+            // Headers (with anchor IDs for heading links)
+            html = html.replace(/^### (.+)$/gm, (match, text) => {
+                const id = text.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+                return `<h3 id="${id}">${text}</h3>`;
+            });
+            html = html.replace(/^## (.+)$/gm, (match, text) => {
+                const id = text.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+                return `<h2 id="${id}">${text}</h2>`;
+            });
+            html = html.replace(/^# (.+)$/gm, (match, text) => {
+                const id = text.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+                return `<h1 id="${id}">${text}</h1>`;
+            });
 
             // Blockquotes
             html = html.replace(/^> (.+)$/gm, '<blockquote>$1</blockquote>');
@@ -274,7 +283,14 @@
                 return link;
             }
             
+            // Parse heading anchor if present (e.g., file#heading or file#^blockid)
+            let headingAnchor = null;
             const cleanLink = link.split('|')[0];
+            const [filePart, ...anchorParts] = cleanLink.split('#');
+            if (anchorParts.length > 0) {
+                headingAnchor = anchorParts.join('#');
+            }
+            
             const extensions = ['.md', '.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg'];
             
             if (cleanLink.startsWith('/')) {
@@ -394,24 +410,45 @@
             container.innerHTML = '<div class="loading"><div class="spinner"></div>Loading...</div>';
 
             try {
+                // Check if path contains heading anchor
+                const [filePath, headingAnchor] = path.split('#');
+                const actualPath = filePath || path;
+                
                 // Check if this is an image file
                 const imageExtensions = ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg', '.bmp'];
-                const lowerPath = path.toLowerCase();
+                const lowerPath = actualPath.toLowerCase();
                 const isImage = imageExtensions.some(ext => lowerPath.endsWith(ext));
                 
                 if (isImage) {
                     // Load and display image directly
-                    await loadImageFile(path);
+                    await loadImageFile(actualPath);
                 } else {
                     // Load markdown file
-                    await loadMarkdownFile(path);
+                    await loadMarkdownFile(actualPath);
                 }
                 
                 // Track visited file
-                visitedFiles.add(path);
+                visitedFiles.add(actualPath);
                 
                 renderFileExplorer();
-                renderBreadcrumbs(path);
+                renderBreadcrumbs(actualPath);
+                
+                // Scroll to heading if anchor present
+                if (headingAnchor && !headingAnchor.startsWith('^')) {
+                    setTimeout(() => {
+                        const element = document.getElementById(headingAnchor);
+                        if (element) {
+                            element.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                            element.style.transition = 'background-color 2s ease';
+                            element.style.backgroundColor = 'rgba(55, 148, 255, 0.2)';
+                            setTimeout(() => {
+                                element.style.backgroundColor = 'transparent';
+                            }, 2000);
+                        } else {
+                            console.warn(`Heading not found: ${headingAnchor}`);
+                        }
+                    }, 100);
+                }
             } catch (e) {
                 container.innerHTML = `<div class="error">Failed to load file: ${e.message}</div>`;
             }
