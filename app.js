@@ -193,15 +193,22 @@
             // Task lists (must be before regular lists)
             html = html.replace(/^[\-\*] \[([ x])\] (.+)$/gim, (match, checked, text) => {
                 const isChecked = checked.toLowerCase() === 'x';
-                return `<li class="task-list-item">
+                const blockId = generateBlockId(text);
+                return `<li class="task-list-item" data-block-id="${blockId}">
                     <input type="checkbox" ${isChecked ? 'checked' : ''} disabled>
                     <span class="task-text ${isChecked ? 'checked' : ''}">${text}</span>
                 </li>`;
             });
 
             // Lists
-            html = html.replace(/^\- (.+)$/gm, '<li>$1</li>');
-            html = html.replace(/^\d+\. (.+)$/gm, '<li>$1</li>');
+            html = html.replace(/^\- (.+)$/gm, (match, text) => {
+                const blockId = generateBlockId(text);
+                return `<li data-block-id="${blockId}">${text}</li>`;
+            });
+            html = html.replace(/^\d+\. (.+)$/gm, (match, text) => {
+                const blockId = generateBlockId(text);
+                return `<li data-block-id="${blockId}">${text}</li>`;
+            });
 
             // Wrap consecutive li elements in ul/ol - use multiline flag
             html = html.replace(/((?:<li>.*<\/li>\n?)+)/g, (match) => {
@@ -229,14 +236,24 @@
                 // Only convert single newlines to <br> if the block has multiple lines of text
                 // Skip if it looks like it's already processed or is a list item
                 if (block.includes('<li>') || !block.includes('\n')) {
-                    return `<p>${block}</p>`;
+                    const blockId = generateBlockId(block);
+                    return `<p data-block-id="${blockId}">${block}</p>`;
                 }
                 
                 // Convert single newlines to <br> but preserve multiple spaces
-                return `<p>${block.replace(/\n/g, '<br>')}</p>`;
+                const blockId = generateBlockId(block);
+                return `<p data-block-id="${blockId}">${block.replace(/\n/g, '<br>')}</p>`;
             }).join('\n');
 
             return html;
+        }
+
+        function generateBlockId(text) {
+            const clean = text.replace(/<[^>]*>/g, '').replace(/[^a-zA-Z0-9]/g, '');
+            const hash = clean.split('').reduce((acc, char) => {
+                return ((acc << 5) - acc) + char.charCodeAt(0) | 0;
+            }, 0);
+            return 'block-' + Math.abs(hash).toString(36).substring(0, 8);
         }
 
         function parseInline(text) {
@@ -652,10 +669,12 @@
                 renderFileExplorer();
                 renderBreadcrumbs(actualPath);
                 
-                // Scroll to heading if anchor present
-                if (headingAnchor && !headingAnchor.startsWith('^')) {
+                if (headingAnchor) {
                     setTimeout(() => {
-                        const element = document.getElementById(headingAnchor);
+                        const isBlockRef = headingAnchor.startsWith('^');
+                        const selector = isBlockRef ? `[data-block-id="${headingAnchor.substring(1)}"]` : `#${headingAnchor}`;
+                        const element = document.querySelector(selector);
+                        
                         if (element) {
                             element.scrollIntoView({ behavior: 'smooth', block: 'start' });
                             element.style.transition = 'background-color 2s ease';
@@ -664,7 +683,7 @@
                                 element.style.backgroundColor = 'transparent';
                             }, 2000);
                         } else {
-                            console.warn(`Heading not found: ${headingAnchor}`);
+                            console.warn(`${isBlockRef ? 'Block' : 'Heading'} not found: ${headingAnchor}`);
                         }
                     }, 100);
                 }
