@@ -7,6 +7,8 @@
         let fileCache = {}; // Maps filename -> full path
         let aliasCache = {}; // Maps alias -> full path
         let allKnownFiles = []; // All files from config + discovered
+        let fetchCache = new Map(); // Cache fetch results to avoid duplicate requests
+        let pathResolutionCache = {}; // Cache successful path resolutions
 
         // Parse URL fragment
         function parseFragment() {
@@ -32,8 +34,14 @@
             }
         }
 
-        // Fetch markdown file content
+        // Fetch markdown file content with caching
         async function fetchMarkdown(url, secret) {
+            // Check cache first
+            const cacheKey = `${url}|${secret}`;
+            if (fetchCache.has(cacheKey)) {
+                return fetchCache.get(cacheKey);
+            }
+            
             const response = await fetch(url, {
                 method: 'GET',
                 headers: {
@@ -45,7 +53,9 @@
                 throw new Error(`HTTP ${response.status}: ${response.statusText}`);
             }
 
-            return await response.text();
+            const text = await response.text();
+            fetchCache.set(cacheKey, text);
+            return text;
         }
 
         // Parse markdown to HTML
@@ -322,6 +332,12 @@
                 headingAnchor = anchorParts.join('#');
             }
             
+            // Check path resolution cache first (before any lookups)
+            const cacheKey = `${filePart}|${currentFile || ''}`;
+            if (pathResolutionCache[cacheKey]) {
+                return pathResolutionCache[cacheKey];
+            }
+            
             // Check alias cache first (before filename matching)
             if (aliasCache[filePart]) {
                 return aliasCache[filePart];
@@ -375,13 +391,33 @@
             const linkBaseName = linkName.replace(/\.[^.]+$/, '');
             
             for (const ext of extensions) {
-                if (fileCache[cleanLink + ext]) return fileCache[cleanLink + ext];
-                if (fileCache[linkName + ext]) return fileCache[linkName + ext];
-                if (fileCache[linkBaseName + ext]) return fileCache[linkBaseName + ext];
+                if (fileCache[cleanLink + ext]) {
+                    const result = fileCache[cleanLink + ext];
+                    pathResolutionCache[cacheKey] = result;
+                    return result;
+                }
+                if (fileCache[linkName + ext]) {
+                    const result = fileCache[linkName + ext];
+                    pathResolutionCache[cacheKey] = result;
+                    return result;
+                }
+                if (fileCache[linkBaseName + ext]) {
+                    const result = fileCache[linkBaseName + ext];
+                    pathResolutionCache[cacheKey] = result;
+                    return result;
+                }
             }
             
-            if (fileCache[linkName]) return fileCache[linkName];
-            if (fileCache[linkBaseName]) return fileCache[linkBaseName];
+            if (fileCache[linkName]) {
+                const result = fileCache[linkName];
+                pathResolutionCache[cacheKey] = result;
+                return result;
+            }
+            if (fileCache[linkBaseName]) {
+                const result = fileCache[linkBaseName];
+                pathResolutionCache[cacheKey] = result;
+                return result;
+            }
             
             return cleanLink;
         }
@@ -411,9 +447,25 @@
             
             list.innerHTML = finalList.map(file => {
                 const escapedFile = file.replace(/'/g, "\\'");
+                const fileName = file.split('/').pop();
+                const lowerFileName = fileName.toLowerCase();
+                
+                let icon = '📄';
+                if (/\.(png|jpg|jpeg|gif|webp|svg|bmp)$/i.test(lowerFileName)) {
+                    icon = '🖼️';
+                } else if (lowerFileName.endsWith('.pdf')) {
+                    icon = '📕';
+                } else if (lowerFileName.endsWith('.mp3') || lowerFileName.endsWith('.wav')) {
+                    icon = '🎵';
+                } else if (lowerFileName.endsWith('.mp4') || lowerFileName.endsWith('.webm')) {
+                    icon = '🎬';
+                }
+                
+                const displayName = fileName.replace(/\.(md|png|jpg|jpeg|gif|webp|svg|bmp|pdf|mp3|wav|mp4|webm)$/i, '');
+                
                 return `<li class="file-item ${file === currentPath ? 'active' : ''}" onclick="loadFile('${escapedFile}')">
-                    <span class="icon">📄</span>
-                    <span class="name">${file.split('/').pop().replace('.md', '')}</span>
+                    <span class="icon">${icon}</span>
+                    <span class="name">${displayName}</span>
                 </li>`;
             }).join('');
         }
@@ -498,59 +550,70 @@
             const images = extractImages(content, currentFile);
             const allRefs = [...links, ...images];
             
-            for (const ref of allRefs) {
-                const cleanRef = ref.split('|')[0];
-                const name = cleanRef.split('/').pop();
-                const baseName = name.replace(/\.[^.]+$/, '');
-                
-                const possibleExtensions = ['', '.md', '.png', '.jpg', '.jpeg', '.gif', '.webp'];
-                const possiblePaths = [];
-                
-                if (cleanRef.includes('/')) {
-                    possiblePaths.push(cleanRef);
-                }
-                
-                Object.values(fileCache).forEach(cachedPath => {
-                    const dir = cachedPath.substring(0, cachedPath.lastIndexOf('/'));
-                    if (dir) {
-                        possiblePaths.push(`${dir}/${name}`);
-                        possiblePaths.push(`${dir}/${baseName}.md`);
-                    }
-                });
-                
-                possibleExtensions.forEach(ext => {
-                    possiblePaths.push(name + ext);
-                    possiblePaths.push(baseName + ext);
-                });
-                
-                if (currentFile && currentFile.includes('/')) {
-                    const currentDir = currentFile.substring(0, currentFile.lastIndexOf('/'));
-                    possiblePaths.push(`${currentDir}/${name}`);
-                    possiblePaths.push(`${currentDir}/${baseName}.md`);
-                }
-                
-                for (const testPath of [...new Set(possiblePaths)]) {
-                    if (fileCache[testPath]) continue;
+            const BATCH_SIZE = 10;
+            
+            for (let i = 0; i < allRefs.length; i += BATCH_SIZE) {
+                const batch = allRefs.slice(i, i + BATCH_SIZE);
+                const batchPromises = batch.map(async (ref) => {
+                    const cleanRef = ref.split('|')[0];
+                    const name = cleanRef.split('/').pop();
+                    const baseName = name.replace(/\.[^.]+$/, '');
                     
-                    try {
-                        const testContent = await fetchFileAtUrl(testPath);
-                        if (testContent) {
-                            fileCache[testPath] = testPath;
-                            fileCache[name] = testPath;
-                            fileCache[baseName] = testPath;
-                            if (!allKnownFiles.includes(testPath)) {
-                                allKnownFiles.push(testPath);
-                            }
-                            visitedFiles.add(testPath);
-                            
-                            if (testPath.endsWith('.md')) {
-                                await discoverReferencedFiles(testContent, testPath);
-                            }
-                            break;
-                        }
-                    } catch (e) {
+                    if (fileCache[name] || fileCache[baseName]) {
+                        return;
                     }
-                }
+                    
+                    const possibleExtensions = ['', '.md', '.png', '.jpg', '.jpeg', '.gif', '.webp'];
+                    const possiblePaths = [];
+                    
+                    if (cleanRef.includes('/')) {
+                        possiblePaths.push(cleanRef);
+                    }
+                    
+                    Object.values(fileCache).forEach(cachedPath => {
+                        const dir = cachedPath.substring(0, cachedPath.lastIndexOf('/'));
+                        if (dir) {
+                            possiblePaths.push(`${dir}/${name}`);
+                            possiblePaths.push(`${dir}/${baseName}.md`);
+                        }
+                    });
+                    
+                    possibleExtensions.forEach(ext => {
+                        possiblePaths.push(name + ext);
+                        possiblePaths.push(baseName + ext);
+                    });
+                    
+                    if (currentFile && currentFile.includes('/')) {
+                        const currentDir = currentFile.substring(0, currentFile.lastIndexOf('/'));
+                        possiblePaths.push(`${currentDir}/${name}`);
+                        possiblePaths.push(`${currentDir}/${baseName}.md`);
+                    }
+                    
+                    for (const testPath of [...new Set(possiblePaths)]) {
+                        if (fileCache[testPath]) continue;
+                        
+                        try {
+                            const testContent = await fetchFileAtUrl(testPath);
+                            if (testContent) {
+                                fileCache[testPath] = testPath;
+                                fileCache[name] = testPath;
+                                fileCache[baseName] = testPath;
+                                if (!allKnownFiles.includes(testPath)) {
+                                    allKnownFiles.push(testPath);
+                                }
+                                visitedFiles.add(testPath);
+                                
+                                if (testPath.endsWith('.md')) {
+                                    await discoverReferencedFiles(testContent, testPath);
+                                }
+                                break;
+                            }
+                        } catch (e) {
+                        }
+                    }
+                });
+                
+                await Promise.all(batchPromises);
             }
             
             saveFileCache();
@@ -558,15 +621,12 @@
 
         // Load markdown file
         async function loadMarkdownFile(path) {
-            // Use search to find the file
             const content = await loadFileWithSearch(path);
             
-            // Parse frontmatter and build alias cache
             const frontmatter = parseFrontmatter(content);
             if (frontmatter.aliases && frontmatter.aliases.length > 0) {
                 frontmatter.aliases.forEach(alias => {
                     aliasCache[alias] = path;
-                    // Also cache lowercase version for case-insensitive matching
                     aliasCache[alias.toLowerCase()] = path;
                 });
                 console.log(`Loaded ${frontmatter.aliases.length} aliases for ${path}`);
@@ -635,6 +695,11 @@
                 return await fetchFileAtUrl(fileCache[baseNameWithoutExt]);
             }
             
+            const hasExtension = /\.[a-z0-9]+$/i.test(baseName);
+            const extensions = hasExtension 
+                ? ['']
+                : ['.md', '.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg', ''];
+            
             const knownDirs = new Set(['']);
             Object.values(fileCache).forEach(path => {
                 const lastSlash = path.lastIndexOf('/');
@@ -643,36 +708,43 @@
                 }
             });
             
-            const extensions = ['', '.md', '.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg'];
-            const searchPaths = new Set();
+            const searchPaths = [];
             
-            if (cleanName.includes('/')) {
-                extensions.forEach(ext => {
-                    searchPaths.add(cleanName + ext);
-                });
+            if (hasExtension) {
+                searchPaths.push(cleanName);
             }
-            
-            knownDirs.forEach(dir => {
-                extensions.forEach(ext => {
-                    if (dir) {
-                        searchPaths.add(`${dir}/${baseName}${ext}`);
-                        searchPaths.add(`${dir}/${baseNameWithoutExt}${ext}`);
-                    } else {
-                        searchPaths.add(`${baseName}${ext}`);
-                        searchPaths.add(`${baseNameWithoutExt}${ext}`);
-                    }
-                });
-            });
             
             if (currentPath && currentPath.includes('/')) {
                 const currentDir = currentPath.substring(0, currentPath.lastIndexOf('/'));
                 extensions.forEach(ext => {
-                    searchPaths.add(`${currentDir}/${baseName}${ext}`);
-                    searchPaths.add(`${currentDir}/${baseNameWithoutExt}${ext}`);
+                    searchPaths.push(`${currentDir}/${baseName}${ext}`);
+                    searchPaths.push(`${currentDir}/${baseNameWithoutExt}${ext}`);
                 });
             }
             
-            for (const path of searchPaths) {
+            knownDirs.forEach(dir => {
+                if (dir === '') {
+                    extensions.forEach(ext => {
+                        searchPaths.push(`${baseName}${ext}`);
+                        searchPaths.push(`${baseNameWithoutExt}${ext}`);
+                    });
+                } else {
+                    extensions.forEach(ext => {
+                        searchPaths.push(`${dir}/${baseName}${ext}`);
+                        searchPaths.push(`${dir}/${baseNameWithoutExt}${ext}`);
+                    });
+                }
+            });
+            
+            if (cleanName.includes('/')) {
+                extensions.forEach(ext => {
+                    searchPaths.push(cleanName + ext);
+                });
+            }
+            
+            const uniquePaths = [...new Set(searchPaths)];
+            
+            for (const path of uniquePaths) {
                 try {
                     const content = await fetchFileAtUrl(path);
                     fileCache[cleanName] = path;
@@ -935,16 +1007,19 @@
                         baseUrl = config.url;
                         secretKey = config.secret;
                         
-                        // Load file cache
                         const cachedFiles = sessionStorage.getItem('fileCache');
                         if (cachedFiles) {
                             fileCache = JSON.parse(cachedFiles);
                         }
                         
-                        // Load all known files
                         const knownFiles = sessionStorage.getItem('allKnownFiles');
                         if (knownFiles) {
                             allKnownFiles = JSON.parse(knownFiles);
+                        }
+                        
+                        const cachedPathResolutions = sessionStorage.getItem('pathResolutionCache');
+                        if (cachedPathResolutions) {
+                            pathResolutionCache = JSON.parse(cachedPathResolutions);
                         }
                         
                         if (config.files) {
@@ -975,6 +1050,7 @@
         function saveFileCache() {
             sessionStorage.setItem('fileCache', JSON.stringify(fileCache));
             sessionStorage.setItem('allKnownFiles', JSON.stringify(allKnownFiles));
+            sessionStorage.setItem('pathResolutionCache', JSON.stringify(pathResolutionCache));
         }
 
         // Initialize
