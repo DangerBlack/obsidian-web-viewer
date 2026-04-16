@@ -430,16 +430,18 @@
             const allFiles = new Set(allKnownFiles);
             visitedFiles.forEach(f => allFiles.add(f));
             
-            // Sort files
             const sortedFiles = Array.from(allFiles).sort();
             
-            // Group by base filename to avoid duplicates, keeping full path
             const uniqueFiles = {};
             sortedFiles.forEach(file => {
                 const baseName = file.split('/').pop();
-                // Keep the full path version if available
-                if (!uniqueFiles[baseName] || file.includes('/')) {
+                if (!uniqueFiles[baseName]) {
                     uniqueFiles[baseName] = file;
+                } else {
+                    const existing = uniqueFiles[baseName];
+                    if (file.length < existing.length) {
+                        uniqueFiles[baseName] = file;
+                    }
                 }
             });
             
@@ -463,7 +465,11 @@
                 
                 const displayName = fileName.replace(/\.(md|png|jpg|jpeg|gif|webp|svg|bmp|pdf|mp3|wav|mp4|webm)$/i, '');
                 
-                return `<li class="file-item ${file === currentPath ? 'active' : ''}" onclick="loadFile('${escapedFile}')">
+                const isActive = file === currentPath || 
+                                 (currentPath && currentPath.endsWith('/' + fileName)) ||
+                                 (currentPath && currentPath === fileName);
+                
+                return `<li class="file-item ${isActive ? 'active' : ''}" onclick="loadFile('${escapedFile}')">
                     <span class="icon">${icon}</span>
                     <span class="name">${displayName}</span>
                 </li>`;
