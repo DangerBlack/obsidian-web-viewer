@@ -5,6 +5,7 @@
         let visitedFiles = new Set();
         let hasInitialized = false;
         let fileCache = {}; // Maps filename -> full path
+        let aliasCache = {}; // Maps alias -> full path
         let allKnownFiles = []; // All files from config + discovered
 
         // Parse URL fragment
@@ -233,6 +234,36 @@
             return div.innerHTML;
         }
 
+        // Parse YAML frontmatter to extract aliases
+        function parseFrontmatter(content) {
+            const match = content.match(/^---\n([\s\S]*?)\n---/);
+            if (!match) return {};
+            
+            const yaml = match[1];
+            const aliases = [];
+            
+            // Parse aliases array (supports both inline and list formats)
+            // Format 1: aliases: [John, Johnny]
+            const inlineMatch = yaml.match(/aliases:\s*\[([^\]]+)\]/);
+            if (inlineMatch) {
+                inlineMatch[1].split(',').forEach(alias => {
+                    aliases.push(alias.trim().replace(/^["']|["']$/g, ''));
+                });
+            }
+            
+            // Format 2: aliases:\n  - John\n  - Johnny
+            const listMatch = yaml.match(/aliases:\s*\n((?:\s*-\s*.+\n?)+)/);
+            if (listMatch) {
+                listMatch[1].split('\n')
+                    .filter(line => line.trim().startsWith('-'))
+                    .forEach(line => {
+                        aliases.push(line.replace(/^\s*-\s*/, '').trim().replace(/^["']|["']$/g, ''));
+                    });
+            }
+            
+            return { aliases };
+        }
+
         // Extract links from markdown content
         function extractLinks(markdown, currentFile) {
             const links = [];
@@ -289,6 +320,14 @@
             const [filePart, ...anchorParts] = cleanLink.split('#');
             if (anchorParts.length > 0) {
                 headingAnchor = anchorParts.join('#');
+            }
+            
+            // Check alias cache first (before filename matching)
+            if (aliasCache[filePart]) {
+                return aliasCache[filePart];
+            }
+            if (aliasCache[filePart.toLowerCase()]) {
+                return aliasCache[filePart.toLowerCase()];
             }
             
             const extensions = ['.md', '.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg'];
@@ -521,6 +560,17 @@
         async function loadMarkdownFile(path) {
             // Use search to find the file
             const content = await loadFileWithSearch(path);
+            
+            // Parse frontmatter and build alias cache
+            const frontmatter = parseFrontmatter(content);
+            if (frontmatter.aliases && frontmatter.aliases.length > 0) {
+                frontmatter.aliases.forEach(alias => {
+                    aliasCache[alias] = path;
+                    // Also cache lowercase version for case-insensitive matching
+                    aliasCache[alias.toLowerCase()] = path;
+                });
+                console.log(`Loaded ${frontmatter.aliases.length} aliases for ${path}`);
+            }
             
             await discoverReferencedFiles(content, path);
             
