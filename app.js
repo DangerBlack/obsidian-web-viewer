@@ -99,7 +99,6 @@
             // Images - handle all Obsidian formats
             // 1. ![[filename]] or ![[filename|alt]] or ![[filename|dimensions]]
             html = html.replace(/!\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g, (match, filename, altOrDims) => {
-                // Check if this looks like an image (common image extensions)
                 const imageExtensions = ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg', '.bmp'];
                 const lowerFilename = filename.toLowerCase();
                 const isImage = imageExtensions.some(ext => lowerFilename.endsWith(ext));
@@ -109,11 +108,13 @@
                     const encodedPath = imagePath.split('/').map(encodeURIComponent).join('/');
                     const fullImageUrl = `${baseUrl}/${encodedPath}`;
                     const alt = altOrDims || filename;
-                    // Use data attribute for the real URL, load via JavaScript
                     return `<div class="image-container"><img src="about:blank" data-src="${fullImageUrl}" data-secret="${secretKey}" alt="${alt}" class="image-preview lazy-image" /></div>`;
                 }
-                // Not an image, leave as internal link (will be handled by internal link regex)
-                return match;
+                
+                // Not an image - this is a transclusion, mark for later processing
+                // Store transclusion info in data attribute for async processing
+                const escapedFilename = filename.replace(/'/g, "\\'");
+                return `<div class="transclusion-placeholder" data-transclusion="${escapedFilename}" data-alt="${altOrDims || ''}"></div>`;
             });
 
             // 2. ![alt](url) - Standard markdown images
@@ -1096,12 +1097,71 @@
             });
         }
 
-        // Call loadLazyImages after content is rendered
+        // Load transclusions (embedded notes)
+        async function loadTransclusions() {
+            const placeholders = document.querySelectorAll('.transclusion-placeholder');
+            if (placeholders.length === 0) return;
+            
+            const processedFiles = new Set();
+            
+            for (const placeholder of placeholders) {
+                const filename = placeholder.dataset.transclusion;
+                const alt = placeholder.dataset.alt || '';
+                
+                if (!filename || processedFiles.has(filename)) {
+                    continue;
+                }
+                
+                try {
+                    // Parse transclusion for heading reference
+                    const [filePath, headingRef] = filename.split('#');
+                    
+                    // Prevent infinite loops
+                    if (filePath === currentPath || processedFiles.has(filePath)) {
+                        placeholder.outerHTML = '<div class="transclusion-error">Circular reference detected</div>';
+                        continue;
+                    }
+                    
+                    const content = await loadFileWithSearch(filePath);
+                    let embeddedHtml = parseMarkdown(content, baseUrl, filePath);
+                    
+                    // If heading reference, extract only that section
+                    if (headingRef) {
+                        const tempDiv = document.createElement('div');
+                        tempDiv.innerHTML = embeddedHtml;
+                        const headingElement = tempDiv.querySelector(`#${headingRef}`);
+                        
+                        if (headingElement) {
+                            // Get heading and all siblings until next heading of same or higher level
+                            let html = `<h${headingElement.tagName.charAt(1)}>${headingElement.textContent}</h${headingElement.tagName.charAt(1)}>\n`;
+                            let sibling = headingElement.nextElementSibling;
+                            while (sibling && !/^H[1-6]$/.test(sibling.tagName)) {
+                                html += sibling.outerHTML;
+                                sibling = sibling.nextElementSibling;
+                            }
+                            embeddedHtml = html;
+                        } else {
+                            embeddedHtml = `<p>Heading "${headingRef}" not found</p>`;
+                        }
+                    }
+                    
+                    placeholder.outerHTML = `<div class="transclusion">${embeddedHtml}</div>`;
+                    processedFiles.add(filename);
+                } catch (e) {
+                    placeholder.outerHTML = `<div class="transclusion-error">Failed to load: ${filename}</div>`;
+                }
+            }
+        }
+
+        // Call loadLazyImages and loadTransclusions after content is rendered
         const originalLoadFile = loadFile;
         loadFile = async function(path) {
             await originalLoadFile(path);
-            // Load images after a short delay to ensure DOM is ready
-            setTimeout(loadLazyImages, 100);
+            // Load images and transclusions after a short delay to ensure DOM is ready
+            setTimeout(() => {
+                loadLazyImages();
+                loadTransclusions();
+            }, 100);
         };
 
         // Check for URL fragment on load

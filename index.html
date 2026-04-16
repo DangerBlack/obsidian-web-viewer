@@ -453,6 +453,50 @@
         .callout-title {
             font-weight: 600;
             margin-bottom: 8px;
+            text-transform: uppercase;
+            font-size: 13px;
+        }
+
+        /* Transclusions (embedded notes) */
+        .transclusion {
+            border-left: 3px solid #3794ff;
+            padding-left: 20px;
+            margin: 20px 0;
+            background: rgba(55, 148, 255, 0.05);
+            border-radius: 0 6px 6px 0;
+        }
+
+        .transclusion h1,
+        .transclusion h2,
+        .transclusion h3,
+        .transclusion h4,
+        .transclusion h5,
+        .transclusion h6 {
+            margin-top: 0;
+            padding-top: 15px;
+        }
+
+        .transclusion > :first-child {
+            margin-top: 0;
+        }
+
+        .transclusion > :last-child {
+            margin-bottom: 0;
+        }
+
+        .transclusion-error {
+            background: #5a1e1e;
+            border-left: 3px solid #f48771;
+            padding: 10px 15px;
+            margin: 15px 0;
+            border-radius: 0 6px 6px 0;
+            color: #f48771;
+            font-size: 13px;
+        }
+
+        .callout-title {
+            font-weight: 600;
+            margin-bottom: 8px;
             font-size: 14px;
         }
 
