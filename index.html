@@ -444,6 +444,26 @@
             background: #323233;
         }
 
+        /* Task lists */
+        .task-list-item {
+            list-style: none;
+            display: flex;
+            align-items: flex-start;
+            gap: 0.5rem;
+            padding-left: 0;
+        }
+
+        .task-list-item input[type="checkbox"] {
+            margin-top: 0.25rem;
+            cursor: not-allowed;
+            accent-color: #3794ff;
+        }
+
+        .task-list-item .task-text.checked {
+            text-decoration: line-through;
+            color: #858585;
+        }
+
         /* Internal link handling */
         .internal-link {
             color: #3794ff;

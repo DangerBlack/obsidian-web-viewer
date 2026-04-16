@@ -162,6 +162,15 @@
             html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
             html = html.replace(/\*([^*]+)\*/g, '<em>$1</em>');
 
+            // Task lists (must be before regular lists)
+            html = html.replace(/^[\-\*] \[([ x])\] (.+)$/gim, (match, checked, text) => {
+                const isChecked = checked.toLowerCase() === 'x';
+                return `<li class="task-list-item">
+                    <input type="checkbox" ${isChecked ? 'checked' : ''} disabled>
+                    <span class="task-text ${isChecked ? 'checked' : ''}">${text}</span>
+                </li>`;
+            });
+
             // Lists
             html = html.replace(/^\- (.+)$/gm, '<li>$1</li>');
             html = html.replace(/^\d+\. (.+)$/gm, '<li>$1</li>');
